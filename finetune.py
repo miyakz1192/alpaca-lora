@@ -4,14 +4,24 @@ from typing import List
 
 import fire
 import torch
-import transformers
-from datasets import load_dataset
 
 """
 Unused imports:
 import torch.nn as nn
 import bitsandbytes as bnb
 """
+
+# CUDAが利用可能であれば、それを無効にする
+if torch.cuda.is_available():
+    print("INFO: set device to CPU")
+    torch.cuda.set_device(torch.device('cpu'))
+
+#CPUを強制する
+torch.device('cpu')
+
+
+import transformers
+from datasets import load_dataset
 
 from peft import (
     LoraConfig,
@@ -111,7 +121,8 @@ def train(
 
     model = LlamaForCausalLM.from_pretrained(
         base_model,
-        load_in_8bit=True,
+        #load_in_8bit=True,
+        load_in_8bit=False,
         torch_dtype=torch.float16,
         device_map=device_map,
     )
@@ -183,6 +194,8 @@ def train(
     )
     model = get_peft_model(model, config)
 
+    print(f"INFO: data_path={data_path}")
+
     if data_path.endswith(".json") or data_path.endswith(".jsonl"):
         data = load_dataset("json", data_files=data_path)
     else:
@@ -209,6 +222,9 @@ def train(
             print(f"Checkpoint {checkpoint_name} not found")
 
     model.print_trainable_parameters()  # Be more transparent about the % of trainable params.
+
+#    import pdb
+#    pdb.set_trace()
 
     if val_set_size > 0:
         train_val = data["train"].train_test_split(
@@ -239,7 +255,7 @@ def train(
             warmup_steps=100,
             num_train_epochs=num_epochs,
             learning_rate=learning_rate,
-            fp16=True,
+            fp16=False,
             logging_steps=10,
             optim="adamw_torch",
             evaluation_strategy="steps" if val_set_size > 0 else "no",
@@ -261,14 +277,14 @@ def train(
     model.config.use_cache = False
 
     old_state_dict = model.state_dict
-    model.state_dict = (
-        lambda self, *_, **__: get_peft_model_state_dict(
-            self, old_state_dict()
-        )
-    ).__get__(model, type(model))
+    # model.state_dict = (
+    #     lambda self, *_, **__: get_peft_model_state_dict(
+    #         self, old_state_dict()
+    #     )
+    # ).__get__(model, type(model))
 
-    if torch.__version__ >= "2" and sys.platform != "win32":
-        model = torch.compile(model)
+    # if torch.__version__ >= "2" and sys.platform != "win32":
+    #     model = torch.compile(model)
 
     trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
@@ -280,4 +296,5 @@ def train(
 
 
 if __name__ == "__main__":
+    print("INFO: go fire")
     fire.Fire(train)
